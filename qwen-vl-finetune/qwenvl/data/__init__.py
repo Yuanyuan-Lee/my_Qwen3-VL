@@ -26,12 +26,18 @@ VIDEOCHATGPT = {
     "data_path": "PATH_TO_VIDEOCHATGPT_DATA",
 }
 
+DEBUG = {
+    "annotation_path": "/share/project/liyuanyuan/code/Qwen3-VL/qwen-vl-finetune/demo/single_images.json",
+    "data_path": "/share/project/liyuanyuan/code/Qwen3-VL/qwen-vl-finetune",  # Can be empty if paths are in annotations
+}
+
 data_dict = {
     "cambrian_737k": CAMBRIAN_737K,
     "cambrian_737k_pack": CAMBRIAN_737K_PACK,
     "mp_doc": MP_DOC,
     "clevr_mc": CLEVR_MC,
     "videochatgpt": VIDEOCHATGPT,
+    "debug": DEBUG,
 }
 
 
@@ -57,7 +63,7 @@ def data_list(dataset_names):
 
 
 if __name__ == "__main__":
-    dataset_names = ["cambrian_737k"]
+    dataset_names = ["debug%100"]
     configs = data_list(dataset_names)
     for config in configs:
         print(config)

@@ -5,6 +5,20 @@ MASTER_ADDR=${MASTER_ADDR:-"127.0.0.1"}
 MASTER_PORT=${MASTER_PORT:-$(shuf -i 20001-29999 -n 1)}
 NNODES=${WORLD_SIZE:-1}
 
+# Ensure NPROC_PER_NODE is set (try to detect GPU count, fallback to 1)
+NPROC_PER_NODE=${NPROC_PER_NODE:-}
+if [ -z "$NPROC_PER_NODE" ]; then
+    if command -v nvidia-smi >/dev/null 2>&1; then
+        NPROC_PER_NODE=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | wc -l)
+        NPROC_PER_NODE=${NPROC_PER_NODE:-1}
+        if [ "$NPROC_PER_NODE" -eq 0 ]; then
+            NPROC_PER_NODE=1
+        fi
+    else
+        NPROC_PER_NODE=1
+    fi
+fi
+
 # DeepSpeed configuration
 deepspeed=./scripts/zero3.json
 
@@ -20,7 +34,7 @@ grad_accum_steps=4
 entry_file=qwenvl/train/train_qwen.py
 
 # Dataset configuration (replace with public dataset names)
-datasets=public_dataset1,public_dataset2
+datasets=debug%100
 
 # Output configuration
 run_name="qwen3vl"
