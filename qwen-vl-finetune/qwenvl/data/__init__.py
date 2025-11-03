@@ -31,6 +31,41 @@ DEBUG = {
     "data_path": "/share/project/liyuanyuan/code/Qwen3-VL/qwen-vl-finetune",  # Can be empty if paths are in annotations
 }
 
+QWEN_DEBUG = {
+    "annotation_path": "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_stack_bowls_8/train.json",
+    "data_path": "",  # Can be empty if paths are in annotations
+}
+
+QWEN_STACK_BOWLS_4 = {
+    "annotation_path": "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_stack_bowls_4/train.json",
+    "data_path": "",  # Can be empty if paths are in annotations
+}
+
+QWEN_STACK_BOWLS_8 = {
+    "annotation_path": "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_stack_bowls_8/train.json",
+    "data_path": "",  # Can be empty if paths are in annotations
+}
+
+QWEN_STACK_BOWLS_16 = {
+    "annotation_path": "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_stack_bowls_16/train.json",
+    "data_path": "",  # Can be empty if paths are in annotations
+}
+
+QWEN_STACK_BOWLS_32 = {
+    "annotation_path": "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_stack_bowls_32/train.json",
+    "data_path": "",  # Can be empty if paths are in annotations
+}
+
+QWEN_BLOCKS_RANKING_8 = {
+    "annotation_path": "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_blocks_ranking_8/train.json",
+    "data_path": "",  # Can be empty if paths are in annotations
+}
+
+QWEN_HANDOVER_8 = {
+    "annotation_path": "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_handover_8/train.json",
+    "data_path": "",  # Can be empty if paths are in annotations
+}
+
 data_dict = {
     "cambrian_737k": CAMBRIAN_737K,
     "cambrian_737k_pack": CAMBRIAN_737K_PACK,
@@ -38,6 +73,13 @@ data_dict = {
     "clevr_mc": CLEVR_MC,
     "videochatgpt": VIDEOCHATGPT,
     "debug": DEBUG,
+    "qwen_debug": QWEN_DEBUG,
+    "qwen_stack_bowls_4": QWEN_STACK_BOWLS_4,
+    "qwen_stack_bowls_8": QWEN_STACK_BOWLS_8,
+    "qwen_stack_bowls_16": QWEN_STACK_BOWLS_16,
+    "qwen_stack_bowls_32": QWEN_STACK_BOWLS_32,
+    "qwen_blocks_ranking_8": QWEN_BLOCKS_RANKING_8,
+    "qwen_handover_8": QWEN_HANDOVER_8,
 }
 
 
@@ -63,7 +105,7 @@ def data_list(dataset_names):
 
 
 if __name__ == "__main__":
-    dataset_names = ["debug%100"]
+    dataset_names = ["qwen_debug%100"]
     configs = data_list(dataset_names)
     for config in configs:
         print(config)

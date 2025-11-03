@@ -1,2 +1,4 @@
 wandb/
 output/
+qwen3vl*/
+eval_results/
