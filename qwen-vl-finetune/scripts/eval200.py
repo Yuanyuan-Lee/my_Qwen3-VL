@@ -2,7 +2,7 @@ import json
 import torch
 from pathlib import Path
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoProcessor
-from transformers import Qwen3VLForConditionalGeneration  # 添加这一行
+from transformers import Qwen3VLForConditionalGeneration, AutoModelForImageTextToText  # 添加这一行
 import concurrent.futures
 import math
 from tqdm import tqdm  # 新增
@@ -10,20 +10,28 @@ from PIL import Image
 import random
 
 # 配置
-model_path = "./qwen3vl_stack_bowls_8"  # 微调后模型目录
-val_file = "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_stack_bowls_8/val.json"                 # 验证集路径
+model_path = "./qwen3vl_stack_bowls_8_action"  # 微调后模型目录
+val_file = "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_stack_bowls_8_action/val.json"                 # 验证集路径
 device = "cuda" if torch.cuda.is_available() else "cpu"
 max_new_tokens = 256
-output_file = Path("eval_results/qwen3_vl_data_stack_bowls_8.txt")
+output_file = Path("eval_results/qwen3_vl_data_stack_bowls_8_action.txt")
 BATCH_SIZE = 1  # 可根据显存调整
 
 # 加载模型和tokenizer
 tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
 processor = AutoProcessor.from_pretrained(model_path)
-model = Qwen3VLForConditionalGeneration.from_pretrained(  # 修改这里
+model = AutoModelForImageTextToText.from_pretrained(
     model_path,
-    torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32
-).to(device)
+    dtype=torch.bfloat16,
+    attn_implementation="flash_attention_2",
+    device_map="auto",
+)
+# model = Qwen3VLForConditionalGeneration.from_pretrained(  # 修改这里
+#     model_path,
+#     torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32
+# ).to(device)
+
+
 # 不要用 DataParallel
 # if torch.cuda.device_count() > 1:
 #     print(f"Using {torch.cuda.device_count()} GPUs for inference")

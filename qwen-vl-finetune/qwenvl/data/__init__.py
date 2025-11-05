@@ -66,6 +66,21 @@ QWEN_HANDOVER_8 = {
     "data_path": "",  # Can be empty if paths are in annotations
 }
 
+QWEN_STACK_BOWLS_8_ACTION = {
+    "annotation_path": "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_stack_bowls_8_action/train.json",
+    "data_path": "",  # Can be empty if paths are in annotations
+}
+
+QWEN_BLOCKS_RANKING_8_ACTION = {
+    "annotation_path": "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_blocks_ranking_8_action/train.json",
+    "data_path": "",  # Can be empty if paths are in annotations
+}
+
+QWEN_STACK_BOWLS_8_ACTION_NORM = {
+    "annotation_path": "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_stack_bowls_8_action_norm/train.json",
+    "data_path": "",  # Can be empty if paths are in annotations
+}
+
 data_dict = {
     "cambrian_737k": CAMBRIAN_737K,
     "cambrian_737k_pack": CAMBRIAN_737K_PACK,
@@ -80,6 +95,9 @@ data_dict = {
     "qwen_stack_bowls_32": QWEN_STACK_BOWLS_32,
     "qwen_blocks_ranking_8": QWEN_BLOCKS_RANKING_8,
     "qwen_handover_8": QWEN_HANDOVER_8,
+    "qwen_stack_bowls_8_action": QWEN_STACK_BOWLS_8_ACTION,
+    "qwen_blocks_ranking_8_action": QWEN_BLOCKS_RANKING_8_ACTION,
+    "qwen_stack_bowls_8_action_norm": QWEN_STACK_BOWLS_8_ACTION_NORM,
 }
 
 

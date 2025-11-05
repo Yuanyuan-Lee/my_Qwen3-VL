@@ -2,26 +2,36 @@ import json
 import torch
 from pathlib import Path
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoProcessor
-from transformers import Qwen3VLForConditionalGeneration  # 添加这一行
+from transformers import Qwen3VLForConditionalGeneration, AutoModelForImageTextToText  # 添加这一行
 import concurrent.futures
 import math
 from tqdm import tqdm  # 新增
+from PIL import Image
+import random
 
 # 配置
-model_path = "./qwen3vl_stack_bowls_4"  # 微调后模型目录
-val_file = "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_stack_bowls_4/val.json"                 # 验证集路径
+model_path = "./qwen3vl_stack_bowls_8_action"  # 微调后模型目录
+val_file = "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_stack_bowls_8_action/val.json"                 # 验证集路径
 device = "cuda" if torch.cuda.is_available() else "cpu"
-max_new_tokens = 128
-output_file = Path("eval_results/qwen3_vl_data_stack_bowls_4.txt")
-BATCH_SIZE = 16  # 可根据显存调整
+max_new_tokens = 256
+output_file = Path("eval_results/qwen3_vl_data_stack_bowls_8_action.txt")
+BATCH_SIZE = 1  # 可根据显存调整
 
 # 加载模型和tokenizer
 tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
 processor = AutoProcessor.from_pretrained(model_path)
-model = Qwen3VLForConditionalGeneration.from_pretrained(  # 修改这里
+model = AutoModelForImageTextToText.from_pretrained(
     model_path,
-    torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32
-).to(device)
+    dtype=torch.bfloat16,
+    attn_implementation="flash_attention_2",
+    device_map="auto",
+)
+# model = Qwen3VLForConditionalGeneration.from_pretrained(  # 修改这里
+#     model_path,
+#     torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32
+# ).to(device)
+
+
 # 不要用 DataParallel
 # if torch.cuda.device_count() > 1:
 #     print(f"Using {torch.cuda.device_count()} GPUs for inference")
@@ -92,22 +102,48 @@ def infer_one(messages):
             pad_token_id=tokenizer.pad_token_id,
         )
     response = tokenizer.decode(output[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+    print("Prompt:", prompt)
+    print("Images:", len(images))
+    print("Output shape:", output.shape)
+    print("Input length:", inputs["input_ids"].shape[1])
+    print("Generated ids:", output[0][inputs["input_ids"].shape[1]:])
+    print("Decoded:", tokenizer.decode(output[0][inputs["input_ids"].shape[1]:]))
     return response.strip()
+
+def load_image(img_path):
+    if img_path is None:
+        # 返回一张全白图或其他占位图
+        return Image.new("RGB", (224, 224), (255, 255, 255))
+    return Image.open(img_path).convert("RGB")
 
 def batch_infer(batch_messages):
     prompts = []
     images_list = []
+    max_img_num = 0
     for messages in batch_messages:
         prompt = processor.apply_chat_template(messages, tokenize=False)
         prompts.append(prompt)
-        # 提取图片
         images = []
         for msg in messages:
             for seg in msg["content"]:
                 if seg["type"] == "image":
                     images.append(seg["image"])
         images_list.append(images)
-    # 批量处理
+        if len(images) > max_img_num:
+            max_img_num = len(images)
+    # 对齐每个样本的图片数（用最后一张图片补齐）
+    for i in range(len(images_list)):
+        if len(images_list[i]) < max_img_num:
+            if len(images_list[i]) > 0:
+                pad_img = images_list[i][-1]
+            else:
+                pad_img = None
+            images_list[i].extend([pad_img] * (max_img_num - len(images_list[i])))
+    # 将图片路径转为图片对象
+    images_list = [
+        [load_image(img_path) for img_path in img_list]
+        for img_list in images_list
+    ]
     inputs = processor(text=prompts, images=images_list, return_tensors="pt", padding=True)
     for k, v in inputs.items():
         if torch.is_tensor(v):
@@ -120,10 +156,10 @@ def batch_infer(batch_messages):
             eos_token_id=tokenizer.eos_token_id,
             pad_token_id=tokenizer.pad_token_id,
         )
-    # 解码
     responses = []
+    input_lengths = inputs["attention_mask"].sum(dim=1).tolist()
     for i in range(len(prompts)):
-        input_len = inputs["input_ids"][i].shape[0]
+        input_len = input_lengths[i]
         resp = tokenizer.decode(outputs[i][input_len:], skip_special_tokens=True)
         responses.append(resp.strip())
     return responses
@@ -135,6 +171,9 @@ def eval_one(item):
 
 def main():
     data = load_data(val_file)
+    # 随机采样200条数据
+    if len(data) > 200:
+        data = random.sample(data, 200)
     output_file.parent.mkdir(parents=True, exist_ok=True)
     results = []
     all_gt = []
@@ -144,7 +183,7 @@ def main():
         all_messages.append(messages)
         all_gt.append(gt)
     num_batches = math.ceil(len(all_messages) / BATCH_SIZE)
-    for i in tqdm(range(num_batches), desc="Evaluating"):  # 加进度条
+    for i in tqdm(range(num_batches), desc="Evaluating"):
         batch_messages = all_messages[i*BATCH_SIZE:(i+1)*BATCH_SIZE]
         batch_gts = all_gt[i*BATCH_SIZE:(i+1)*BATCH_SIZE]
         batch_preds = batch_infer(batch_messages)

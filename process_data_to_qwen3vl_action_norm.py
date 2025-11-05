@@ -91,7 +91,7 @@ def load_hdf5(dataset_path):
 
     return qpos, image_dict
 
-def process_single_episode(episode_idx, hdf5_dir, instructions_dir, save_dir, task_name, task_level, segment_size, total_segments, total_frames):
+def process_single_episode(episode_idx, hdf5_dir, instructions_dir, save_dir, task_name, task_level, segment_size, total_segments, total_frames, epsilons=None):
     try:
         qpos, image_dict = load_hdf5(hdf5_dir + f"/episode{episode_idx}.hdf5")
         num_steps = qpos.shape[0]
@@ -120,26 +120,47 @@ def process_single_episode(episode_idx, hdf5_dir, instructions_dir, save_dir, ta
             LABEL_SIZE = segment_size
             NUM_LABEL  = total_segments
 
-            def bucketize(delta, pos_eps=0.01, rot_eps=0.01, grip_eps=0.01):
+            def bucketize(delta, eps):
+                """
+                delta: 1D array length n (14)
+                eps: scalar or array-like of length 1, 3, or n
+                """
+                delta = np.asarray(delta)
+                n = delta.shape[-1]
+                eps = np.asarray(eps)
+                if eps.size == 1:
+                    eps_arr = np.full(n, eps.item(), dtype=np.float32)
+                elif eps.size == 3:
+                    # map pos/rot/grip -> per-dim
+                    idx = np.arange(n) % 7
+                    pos_mask  = idx < 3
+                    rot_mask  = (idx >= 3) & (idx < 6)
+                    grip_mask = idx == 6
+                    eps_arr = np.empty(n, dtype=np.float32)
+                    eps_arr[pos_mask]  = float(eps[0])
+                    eps_arr[rot_mask]  = float(eps[1])
+                    eps_arr[grip_mask] = float(eps[2])
+                elif eps.size == n:
+                    eps_arr = eps.astype(np.float32)
+                else:
+                    raise ValueError(f"eps must have length 1,3 or {n}, got {eps.size}")
                 out = np.ones_like(delta, dtype=np.int64)
-                idx = np.arange(delta.shape[-1]) % 7
-                pos_mask  = idx < 3
-                rot_mask  = (idx >= 3) & (idx < 6)
-                grip_mask = idx == 6
-                out[pos_mask  & (delta >  pos_eps)]  = 2
-                out[pos_mask  & (delta < -pos_eps)]  = 0
-                out[rot_mask & (delta >  rot_eps)]  = 2
-                out[rot_mask & (delta < -rot_eps)]  = 0
-                out[grip_mask & (delta >  grip_eps)] = 2
-                out[grip_mask & (delta < -grip_eps)] = 0
+                out[delta >  eps_arr] = 2
+                out[delta < -eps_arr] = 0
                 return out
+
+            # 如果没有外部传入 epsilons，使用默认 0.01（与原来行为一致）
+            if epsilons is None:
+                epsilons_local = 0.01
+            else:
+                epsilons_local = epsilons
 
             traj_label = []
             for i in range(NUM_LABEL):
                 s0 = i * LABEL_SIZE
                 s1 = s0 + LABEL_SIZE - 1
                 delta = sampled_traj_labels[s1] - sampled_traj_labels[s0]
-                traj_label.append(bucketize(delta))
+                traj_label.append(bucketize(delta, epsilons_local))
 
             traj_label_txt = []
             for label in traj_label:
@@ -164,11 +185,21 @@ def process_single_episode(episode_idx, hdf5_dir, instructions_dir, save_dir, ta
             instruct_id = np.random.randint(1, len(instructions['seen']))
             endpose_txt = np.array2string(dual_endpose_cam[start_idx-2: start_idx+1], separator=', ', formatter={'float_kind': lambda x: f"{x:.6f}"},).replace('\n', '')
 
+            # 格式化当前使用的阈值，方便写入 prompt（支持 scalar / list / np.ndarray）
+            if isinstance(epsilons_local, np.ndarray):
+                eps_list = epsilons_local.tolist()
+            elif isinstance(epsilons_local, (list, tuple)):
+                eps_list = list(epsilons_local)
+            else:
+                eps_list = [float(epsilons_local)]
+            eps_display = "[" + ", ".join(f"{float(x):.6f}" for x in eps_list) + "]"
+
             conversation = {
                 "from": "human",
                 "value": f"You are a Aloha-AgileX robot using Joint-position control. The instruction is \"{instructions['seen'][instruct_id]}\".<image>\nThis is the left camera image of the current frame.\n<image>\nThis is the head camera image of the current frame.\n<image>\nThis is the right camera image of the current frame.\n"
                         f"The format of action is [left_arm_1, left_arm_2, left_arm_3, left_arm_4, left_arm_5, left_arm_6, left_gripper, right_arm_1, right_arm_2, right_arm_3, right_arm_4, right_arm_5, right_arm_6, right_gripper] and the previous three (including current) frames' actions are: {endpose_txt}.\n"
-                        f"We define a meta action label as follows: every {segment_size} frames, take the action differences and each component is mapped to 0 if below 0.01, 1 if within [-0.01, 0.01], and 2 if above 0.01.\n"
+                        f"We define a meta action label as follows: every {segment_size} frames, take the action differences and map each component to {{0,1,2}} using per-dimension thresholds. Thresholds can be provided as a single value (applies to all 14 dims), three values (pos/rot/grip), or 14 values (one per dimension in the order above). Current thresholds: {eps_display}.\n"
+                        f"Mapping rule: delta < -eps -> 0, |delta| <= eps -> 1, delta > eps -> 2.\n"
                         f"Please predict the next {total_segments} meta action labels based on the images, instruction and the previous three frames' actions. Please output them in order using \"_\" to connect different trajectory labels like \"11010211111111_10000211111111_…\""
             }
             conversation_gpt = {
@@ -187,7 +218,7 @@ def process_single_episode(episode_idx, hdf5_dir, instructions_dir, save_dir, ta
         logging.error(f"Error processing episode {episode_idx}: {e}", exc_info=True)
         return []
 
-def generate_vlm_data_with_sampling(hdf5_dir, instructions_dir, save_dir, task_name, task_level, episode_count=10, segment_size=8, total_segments=32, total_frames=256):
+def generate_vlm_data_with_sampling(hdf5_dir, instructions_dir, save_dir, task_name, task_level, episode_count=10, segment_size=8, total_segments=32, total_frames=256, epsilons=None):
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     episode_info_list = []
@@ -205,7 +236,8 @@ def generate_vlm_data_with_sampling(hdf5_dir, instructions_dir, save_dir, task_n
                 task_level,
                 segment_size,
                 total_segments,
-                total_frames
+                total_frames,
+                epsilons
             )
             for episode_idx in range(episode_count)
         ]
@@ -232,13 +264,22 @@ if __name__ == "__main__":
                         help="Comma-separated list of task folder names to process. If empty, process all tasks.")
     parser.add_argument("--task-file", type=str, default="",
                         help="Path to a text file containing one task name per line (overrides --tasks if provided).")
-    parser.add_argument("--levels", type=str, default="clean",
+    parser.add_argument("--levels", type=str, default="clean,randomized",
                         help="Comma-separated levels to process among {clean,randomized}. Default: clean,randomized")
     parser.add_argument("--segment-size", type=int, default=8)
     parser.add_argument("--total-segments", type=int, default=8)
     parser.add_argument("--total-frames", type=int, default=64)
     parser.add_argument("--max-workers", type=int, default=8, help="Max threads for processing (ThreadPoolExecutor).")
+    parser.add_argument("--epsilons", type=str, default="",
+                        help="Comma-separated epsilons. Length 1, 3 (pos,rot,grip) or 14 per-dim. Default empty -> use 0.01")
     args = parser.parse_args()
+
+    # 解析 epsilons 参数（支持长度 1, 3 或 14；空字符串 -> None，后续使用默认 0.01）
+    if args.epsilons:
+        eps_list = [float(x.strip()) for x in args.epsilons.split(",") if x.strip() != ""]
+        epsilons = np.array(eps_list, dtype=np.float32)
+    else:
+        epsilons = None
 
     root_data_dir = args.root_data_dir
     save_dir = args.save_dir
@@ -321,7 +362,7 @@ if __name__ == "__main__":
             hdf5_files = sorted(
                 [f for f in os.listdir(hdf5_dir) if f.startswith("episode") and f.endswith(".hdf5")]
             )
-            hdf5_files = hdf5_files[:2]
+            # hdf5_files = hdf5_files[:2]
             if len(hdf5_files) == 0:
                 msg = f"No episode .hdf5 files found in {hdf5_dir}, skip."
                 print(msg)
@@ -344,4 +385,5 @@ if __name__ == "__main__":
                 segment_size=args.segment_size,
                 total_segments=args.total_segments,
                 total_frames=args.total_frames,
+                epsilons=epsilons,
             )
