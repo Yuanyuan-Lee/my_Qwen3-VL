@@ -1,8 +1,8 @@
 import json
 import os
 
-input_dir = '/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_stack_bowls_8_action_norm2'
-output = 'qwen3_vl_data_stack_bowls_8_action_norm2/qwen3_vl_data_stack_bowls_8_action_norm2.json'
+input_dir = '/share/project/liyuanyuan/code/my_Qwen3-VL/data/qwen3_vl_data_stack_bowls_8_v3'
+output = 'data/qwen3_vl_data_stack_bowls_8_v3/qwen3_vl_data_stack_bowls_8_v3.json'
 
 # 获取目录下所有json文件（非递归）
 json_files = [os.path.join(input_dir, f) for f in os.listdir(input_dir) if f.endswith('.json')]
