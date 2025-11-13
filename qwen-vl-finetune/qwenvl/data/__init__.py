@@ -36,58 +36,8 @@ QWEN_DEBUG = {
     "data_path": "",  # Can be empty if paths are in annotations
 }
 
-QWEN_STACK_BOWLS_4 = {
-    "annotation_path": "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_stack_bowls_4/train.json",
-    "data_path": "",  # Can be empty if paths are in annotations
-}
-
-QWEN_STACK_BOWLS_8 = {
-    "annotation_path": "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_stack_bowls_8/train.json",
-    "data_path": "",  # Can be empty if paths are in annotations
-}
-
-QWEN_STACK_BOWLS_16 = {
-    "annotation_path": "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_stack_bowls_16/train.json",
-    "data_path": "",  # Can be empty if paths are in annotations
-}
-
-QWEN_STACK_BOWLS_32 = {
-    "annotation_path": "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_stack_bowls_32/train.json",
-    "data_path": "",  # Can be empty if paths are in annotations
-}
-
-QWEN_BLOCKS_RANKING_8 = {
-    "annotation_path": "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_blocks_ranking_8/train.json",
-    "data_path": "",  # Can be empty if paths are in annotations
-}
-
-QWEN_HANDOVER_8 = {
-    "annotation_path": "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_handover_8/train.json",
-    "data_path": "",  # Can be empty if paths are in annotations
-}
-
-QWEN_STACK_BOWLS_8_ACTION = {
-    "annotation_path": "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_stack_bowls_8_action/train.json",
-    "data_path": "",  # Can be empty if paths are in annotations
-}
-
-QWEN_BLOCKS_RANKING_8_ACTION = {
-    "annotation_path": "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_blocks_ranking_8_action/train.json",
-    "data_path": "",  # Can be empty if paths are in annotations
-}
-
-QWEN_STACK_BOWLS_8_ACTION_NORM = {
-    "annotation_path": "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_stack_bowls_8_action_norm/train.json",
-    "data_path": "",  # Can be empty if paths are in annotations
-}
-
-QWEN_STACK_BOWLS_8_V2 = {
-    "annotation_path": "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_stack_bowls_8_v2/train.json",
-    "data_path": "",  # Can be empty if paths are in annotations
-}
-
-QWEN_STACK_BOWLS_8_ACTION_NORM2 = {
-    "annotation_path": "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_stack_bowls_8_action_norm2/train.json",
+QWEN_STACK_BOWLS_8_V3 = {
+    "annotation_path": "/share/project/liyuanyuan/code/my_Qwen3-VL/data/qwen3_vl_data_stack_bowls_8_v3/train.json",
     "data_path": "",  # Can be empty if paths are in annotations
 }
 
@@ -99,17 +49,7 @@ data_dict = {
     "videochatgpt": VIDEOCHATGPT,
     "debug": DEBUG,
     "qwen_debug": QWEN_DEBUG,
-    "qwen_stack_bowls_4": QWEN_STACK_BOWLS_4,
-    "qwen_stack_bowls_8": QWEN_STACK_BOWLS_8,
-    "qwen_stack_bowls_16": QWEN_STACK_BOWLS_16,
-    "qwen_stack_bowls_32": QWEN_STACK_BOWLS_32,
-    "qwen_blocks_ranking_8": QWEN_BLOCKS_RANKING_8,
-    "qwen_handover_8": QWEN_HANDOVER_8,
-    "qwen_stack_bowls_8_action": QWEN_STACK_BOWLS_8_ACTION,
-    "qwen_blocks_ranking_8_action": QWEN_BLOCKS_RANKING_8_ACTION,
-    "qwen_stack_bowls_8_action_norm": QWEN_STACK_BOWLS_8_ACTION_NORM,
-    "qwen_stack_bowls_8_v2": QWEN_STACK_BOWLS_8_V2,
-    "qwen_stack_bowls_8_action_norm2": QWEN_STACK_BOWLS_8_ACTION_NORM2,
+    "qwen_stack_bowls_8_v3": QWEN_STACK_BOWLS_8_V3,
 }
 
 
