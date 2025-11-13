@@ -199,6 +199,21 @@ def _build_messages(item: Dict[str, Any], base_path: Path) -> List[Dict[str, Any
     return messages
 
 
+def parse_position_from_text(text):
+    """
+    支持 <pos>x1,y1,z1,x2,y2,z2</pos>_<pos>...</pos> 格式
+    返回: List[List[float]]，每个子列表为6个坐标
+    """
+    matches = re.findall(r"<pos>([\d\.\-, ]+)</pos>", text)
+    if matches:
+        all_pos = []
+        for m in matches:
+            nums = [float(x) for x in m.strip().split(",")]
+            all_pos.append(nums)
+        return all_pos  # shape: [num_pos, 6]
+    return None
+
+
 def preprocess_qwen_visual(
     sources,
     processor,
@@ -238,6 +253,20 @@ def preprocess_qwen_visual(
 
     full_result["labels"] = labels
     full_result["input_ids"] = input_ids
+
+    # 找到 gpt 回复内容
+    conversations = sources[0].get("conversations", [])
+    assistant_text = ""
+    for conv in conversations:
+        if conv.get("from") == "gpt":
+            assistant_text = conv.get("value", "")
+            break
+
+    # 解析位置标签
+    position_labels = parse_position_from_text(assistant_text)
+    if position_labels is not None:
+        full_result["position_labels"] = position_labels  # [num_pos, 6]
+
     return full_result
 
 

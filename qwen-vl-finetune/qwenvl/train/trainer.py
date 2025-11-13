@@ -26,6 +26,8 @@ from transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe import (
     Qwen3VLMoeModel,
 )
 from transformers.utils import logging
+from .position_predictor import PositionPredictor
+import re
 
 logger = logging.get_logger(__name__)
 
@@ -491,21 +493,117 @@ def create_optimizer(self):
     return self.optimizer
 
 
-# Apply monkey patches
-Trainer.create_optimizer = create_optimizer
-
-Qwen2VisionTransformerPretrainedModel.print_trainable_parameters = (
-    print_trainable_parameters_visual
-)
-Qwen2VLModel.print_trainable_parameters = print_trainable_parameters
-Qwen2_5_VisionTransformerPretrainedModel.print_trainable_parameters = (
-    print_trainable_parameters_visual
-)
-Qwen2_5_VLModel.print_trainable_parameters = print_trainable_parameters
-
-Qwen3VLVisionModel.print_trainable_parameters = (
-    print_trainable_parameters_visual
-)
-Qwen3VLModel.print_trainable_parameters = print_trainable_parameters
-Qwen3VLMoeVisionModel.print_trainable_parameters = print_trainable_parameters_visual
-Qwen3VLMoeModel.print_trainable_parameters = print_trainable_parameters
+class Qwen3VLTrainer(Trainer):
+    """
+    统一的 Qwen VL Trainer - 修复损失记录不一致问题
+    """
+    def __init__(self, position_loss_weight=1.0, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.position_loss_weight = position_loss_weight
+        self.position_predictor = PositionPredictor()
+        
+        logger.info(f"Qwen3VLTrainer initialized with position_loss_weight={position_loss_weight}")
+    
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        """
+        计算总损失 = 语言模型损失 + 位置预测损失
+        """
+        # 1. 获取位置标签
+        position_labels = inputs.pop("position_labels", None)
+        
+        # 2. 前向传播
+        outputs = model(**inputs)
+        
+        # 3. 获取语言模型损失
+        lm_loss = outputs['loss'] if isinstance(outputs, dict) else outputs.loss
+        
+        # 4. 计算位置预测损失
+        position_loss = torch.tensor(0.0, device=lm_loss.device)
+        
+        if position_labels is not None and outputs.get('predicted_positions') is not None:
+            predicted_positions = outputs['predicted_positions']
+            
+            if predicted_positions.shape == position_labels.shape:
+                position_loss = self.position_predictor.compute_loss(
+                    predicted_positions,
+                    position_labels
+                )
+        
+        # 5. 组合损失
+        total_loss = lm_loss + self.position_loss_weight * position_loss
+        
+        # 6. 记录损失 (统一记录,避免不一致)
+        # 注意: Trainer 会自动记录返回的 loss,所以我们的 total_loss 就是 "loss"
+        if self.state.global_step % self.args.logging_steps == 0:
+            self.log({
+                'train/lm_loss': lm_loss.item(),
+                'train/position_loss': position_loss.item(),
+                'train/total_loss': total_loss.item(),
+                'train/position_weight': self.position_loss_weight,
+                # 验证: 这个值应该等于 Trainer 自动记录的 "loss"
+                'train/computed_total_loss': total_loss.item(),
+            })
+            
+            # 调试信息
+            logger.debug(
+                f"Step {self.state.global_step}: "
+                f"LM={lm_loss.item():.4f}, "
+                f"Pos={position_loss.item():.4f}, "
+                f"Total={total_loss.item():.4f}"
+            )
+        
+        return (total_loss, outputs) if return_outputs else total_loss
+    
+    def prediction_step(self, model, inputs, prediction_loss_only: bool, ignore_keys=None):
+        """
+        执行预测步骤
+        """
+        # 移除position_labels避免传递给模型
+        position_labels = inputs.pop("position_labels", None)
+        
+        # 调用父类的prediction_step
+        loss, logits, labels = super().prediction_step(
+            model, inputs, prediction_loss_only, ignore_keys
+        )
+        
+        return loss, logits, labels
+    
+    def save_model(self, output_dir: Optional[str] = None, _internal_call: bool = False):
+        """
+        保存模型
+        """
+        if output_dir is None:
+            output_dir = self.args.output_dir
+        
+        os.makedirs(output_dir, exist_ok=True)
+        
+        logger.info(f"Saving model to {output_dir}")
+        
+        # 保存基础模型（不包括position head）
+        if hasattr(self.model, 'get_base_model'):
+            base_model = self.model.get_base_model()
+            base_model.save_pretrained(output_dir)
+        elif hasattr(self.model, 'module'):
+            # 处理DDP包装的模型
+            if hasattr(self.model.module, 'get_base_model'):
+                base_model = self.model.module.get_base_model()
+                base_model.save_pretrained(output_dir)
+            else:
+                self.model.module.save_pretrained(output_dir)
+        else:
+            self.model.save_pretrained(output_dir)
+        
+        # 保存tokenizer
+        if self.tokenizer is not None:
+            self.tokenizer.save_pretrained(output_dir)
+        
+        # 如果需要保存完整模型（包括position head）
+        if hasattr(self.args, 'save_full_model') and self.args.save_full_model:
+            full_model_path = os.path.join(output_dir, "full_model.pt")
+            if hasattr(self.model, 'module'):
+                torch.save(self.model.module.state_dict(), full_model_path)
+            else:
+                torch.save(self.model.state_dict(), full_model_path)
+            logger.info(f"Saved full model to {full_model_path}")
+        
+        logger.info(f"Model saved successfully to {output_dir}")

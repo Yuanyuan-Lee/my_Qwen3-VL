@@ -23,7 +23,7 @@ fi
 deepspeed=./scripts/zero3.json
 
 # Model configuration
-llm=/share/project/liyuanyuan/code/Qwen3-VL/weights/Qwen3-VL-2B-Instruct  # Using HuggingFace model ID
+llm=/share/project/liyuanyuan/code/my_Qwen3-VL/weights/Qwen3-VL-2B-Instruct  # Using HuggingFace model ID
 
 # Training hyperparameters
 lr=1e-5
@@ -44,6 +44,7 @@ output_dir=./train_results/qwen3vl_stack_bowls_8_v3
 args="
     --deepspeed ${deepspeed} \
     --model_name_or_path "${llm}" \
+    --model_type qwen3vl \
     --dataset_use ${datasets} \
     --data_flatten True \
     --tune_mm_vision False \
