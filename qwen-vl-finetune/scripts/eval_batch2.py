@@ -1,21 +1,19 @@
 import json
 import torch
 from pathlib import Path
-from transformers import AutoModelForCausalLM, AutoTokenizer, AutoProcessor
-from transformers import Qwen3VLForConditionalGeneration, AutoModelForImageTextToText  # 添加这一行
-import concurrent.futures
-import math
-from tqdm import tqdm  # 新增
+from transformers import AutoModelForCausalLM, AutoTokenizer, AutoProcessor, AutoModelForImageTextToText
+from tqdm import tqdm
 from PIL import Image
 import random
+import math
 
 # 配置
-model_path = "./qwen3vl_stack_bowls_8_v2_val"  # 微调后模型目录
-val_file = "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_stack_bowls_8_v2/val.json"                 # 验证集路径
+model_path = "./qwen3vl_stack_bowls_8_v2_val"
+val_file = "/share/project/liyuanyuan/code/Qwen3-VL/qwen3_vl_data_stack_bowls_8_v2/val.json"
 device = "cuda" if torch.cuda.is_available() else "cpu"
 max_new_tokens = 256
 output_file = Path("eval_results/qwen3_vl_data_stack_bowls_8_v2_val.txt")
-BATCH_SIZE = 1  # 可根据显存调整
+batch_size = 128  # 可根据显存调整
 
 # 加载模型和tokenizer
 tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
@@ -24,18 +22,11 @@ model = AutoModelForImageTextToText.from_pretrained(
     model_path,
     dtype=torch.bfloat16,
     attn_implementation="flash_attention_2",
-    device_map="auto",
+    device_map="auto",  # 让transformers自动分配到多卡
 )
-# model = Qwen3VLForConditionalGeneration.from_pretrained(  # 修改这里
-#     model_path,
-#     torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32
-# ).to(device)
-
-
-# 不要用 DataParallel
-# if torch.cuda.device_count() > 1:
-#     print(f"Using {torch.cuda.device_count()} GPUs for inference")
-#     model = torch.nn.DataParallel(model)
+# 不需要 DataParallel
+# model = torch.nn.DataParallel(model)
+# model.to(device)
 model.eval()
 
 def load_data(path):
@@ -53,7 +44,6 @@ def build_messages(item):
     user_text = user_turn["value"]
     gt_text = gt_turn["value"]
 
-    # 多张图片输入处理
     images = item["image"]
     if not isinstance(images, list):
         images = [images]
@@ -65,12 +55,10 @@ def build_messages(item):
         if seg:
             content.append({"type": "text", "text": seg})
         if i < len(user_parts) - 1:
-            # 依次插入图片
             if img_idx < len(images):
                 content.append({"type": "image", "image": images[img_idx]})
                 img_idx += 1
             else:
-                # 如果图片数量不够，也可以选择插入最后一张或报错
                 content.append({"type": "image", "image": images[-1]})
 
     return [
@@ -78,21 +66,16 @@ def build_messages(item):
     ], gt_text
 
 def infer_one(messages):
-    # 1. 生成 prompt
     prompt = processor.apply_chat_template(messages, tokenize=False)
-    # 2. 构造 processor 输入
-    # 提取图片
     images = []
     for msg in messages:
         for seg in msg["content"]:
             if seg["type"] == "image":
                 images.append(seg["image"])
-    # 3. 用 processor 处理文本和图片
     inputs = processor(text=prompt, images=images, return_tensors="pt")
     for k, v in inputs.items():
         if torch.is_tensor(v):
             inputs[k] = v.to(device)
-    # 4. 推理
     with torch.no_grad():
         output = model.generate(
             **inputs,
@@ -112,44 +95,35 @@ def infer_one(messages):
 
 def load_image(img_path):
     if img_path is None:
-        # 返回一张全白图或其他占位图
         return Image.new("RGB", (224, 224), (255, 255, 255))
     return Image.open(img_path).convert("RGB")
 
-def batch_infer(batch_messages):
-    prompts = []
-    images_list = []
-    max_img_num = 0
-    for messages in batch_messages:
-        prompt = processor.apply_chat_template(messages, tokenize=False)
-        prompts.append(prompt)
-        images = []
-        for msg in messages:
-            for seg in msg["content"]:
-                if seg["type"] == "image":
-                    images.append(seg["image"])
-        images_list.append(images)
-        if len(images) > max_img_num:
-            max_img_num = len(images)
-    # 对齐每个样本的图片数（用最后一张图片补齐）
-    for i in range(len(images_list)):
-        if len(images_list[i]) < max_img_num:
-            if len(images_list[i]) > 0:
-                pad_img = images_list[i][-1]
-            else:
-                pad_img = None
-            images_list[i].extend([pad_img] * (max_img_num - len(images_list[i])))
-    # 将图片路径转为图片对象
-    images_list = [
-        [load_image(img_path) for img_path in img_list]
-        for img_list in images_list
+def infer_batch(messages_batch):
+    prompts = [processor.apply_chat_template(msgs, tokenize=False) for msgs in messages_batch]
+    images_batch = []
+    for msgs in messages_batch:
+        imgs = []
+        for seg in msgs[0]["content"]:
+            if seg["type"] == "image":
+                imgs.append(seg["image"])
+        images_batch.append(imgs)
+    # 处理图片路径为PIL对象
+    images_batch = [
+        [load_image(img_path) for img_path in imgs] for imgs in images_batch
     ]
-    inputs = processor(text=prompts, images=images_list, return_tensors="pt", padding=True)
-    for k, v in inputs.items():
-        if torch.is_tensor(v):
-            inputs[k] = v.to(device)
+    # 统一图片数量
+    max_imgs = max(len(imgs) for imgs in images_batch)
+    for imgs in images_batch:
+        while len(imgs) < max_imgs:
+            imgs.append(Image.new("RGB", (224, 224), (255, 255, 255)))
+    inputs = processor(
+        text=prompts,
+        images=images_batch,
+        return_tensors="pt",
+        padding=True,
+    )
     with torch.no_grad():
-        outputs = model.generate(
+        output = model.generate(
             **inputs,
             max_new_tokens=max_new_tokens,
             do_sample=False,
@@ -157,37 +131,39 @@ def batch_infer(batch_messages):
             pad_token_id=tokenizer.pad_token_id,
         )
     responses = []
-    input_lengths = inputs["attention_mask"].sum(dim=1).tolist()
     for i in range(len(prompts)):
-        input_len = input_lengths[i]
-        resp = tokenizer.decode(outputs[i][input_len:], skip_special_tokens=True)
+        print("Prompt:", prompts[i])
+        print("Images:", len(images_batch[i]))
+        print("Output shape:", output.shape)
+        print("Input length:", inputs["input_ids"].shape[1])
+        print("Generated ids:", output[i][inputs["input_ids"].shape[1]:])
+        print("Decoded:", tokenizer.decode(output[i][inputs["input_ids"].shape[1]:]))
+        resp = tokenizer.decode(
+            output[i][inputs["input_ids"].shape[1]:], skip_special_tokens=True
+        )
+        # 可选：去除“丶”字符
+        resp = resp.replace("丶", "")
         responses.append(resp.strip())
     return responses
 
-def eval_one(item):
-    messages, gt = build_messages(item)
-    pred = infer_one(messages)
-    return gt, pred
-
 def main():
     data = load_data(val_file)
-    # 随机采样50条数据
-    if len(data) > 50:
-        data = random.sample(data, 50)
+    # if len(data) > 16:
+    #     data = random.sample(data, 16)
     output_file.parent.mkdir(parents=True, exist_ok=True)
     results = []
-    all_gt = []
-    all_messages = []
-    for item in data:
-        messages, gt = build_messages(item)
-        all_messages.append(messages)
-        all_gt.append(gt)
-    num_batches = math.ceil(len(all_messages) / BATCH_SIZE)
+    # 构造 batch
+    num_batches = math.ceil(len(data) / batch_size)
     for i in tqdm(range(num_batches), desc="Evaluating"):
-        batch_messages = all_messages[i*BATCH_SIZE:(i+1)*BATCH_SIZE]
-        batch_gts = all_gt[i*BATCH_SIZE:(i+1)*BATCH_SIZE]
-        batch_preds = batch_infer(batch_messages)
-        for gt, pred in zip(batch_gts, batch_preds):
+        batch_items = data[i * batch_size : (i + 1) * batch_size]
+        messages_batch = []
+        gt_batch = []
+        for item in batch_items:
+            messages, gt = build_messages(item)
+            messages_batch.append(messages)
+            gt_batch.append(gt)
+        preds = infer_batch(messages_batch)
+        for gt, pred in zip(gt_batch, preds):
             results.append((gt, pred))
             line = f"GT: {gt}\nPred: {pred}\n{'='*30}\n"
             print(line, end="")
